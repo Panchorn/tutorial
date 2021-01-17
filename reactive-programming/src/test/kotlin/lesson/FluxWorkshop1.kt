@@ -1,19 +1,23 @@
 package lesson
 
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import java.io.BufferedWriter
+import java.io.File
+import java.io.FileWriter
+import java.lang.Thread.sleep
+import java.net.HttpURLConnection
+import java.net.URL
+import java.text.SimpleDateFormat
+import javax.net.ssl.HttpsURLConnection
 import lesson.client.CovidCase
 import lesson.client.CovidCaseWrapper
 import org.apache.logging.log4j.LogManager
 import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.Tags
 import org.junit.jupiter.api.Test
-import java.io.BufferedWriter
-import java.io.File
-import java.io.FileWriter
-import java.net.HttpURLConnection
-import java.net.URL
-import java.text.SimpleDateFormat
-import javax.net.ssl.HttpsURLConnection
+import reactor.core.publisher.Flux
+import reactor.core.publisher.toMono
+import reactor.core.scheduler.Schedulers
 
 class FluxWorkshop1 {
 
@@ -21,15 +25,25 @@ class FluxWorkshop1 {
     private val log = LogManager.getLogger(FluxWorkshop1::class.java)
 
     //TODO revise this function to Flux
+    @Test
     @Tags(*[Tag("Workshop"), Tag("Flux")])
-    private fun getCovidCases(): List<CovidCase> {
-        this.createGetHttpsConnection("$BASE_URL/cases").let { httpConnect ->
-            if (httpConnect.responseCode == HttpURLConnection.HTTP_OK)
-                return jacksonObjectMapper().readValue(httpConnect.inputStream, CovidCaseWrapper::class.java).data
-                    ?: throw RuntimeException("Data not found")
-            else
-                throw RuntimeException("${httpConnect.responseCode}:${httpConnect.responseMessage}")
-        }
+    fun getCovidCases() {
+        log.info("starting")
+        val flux = Flux.create<CovidCase> { emitter ->
+            this.createGetHttpsConnection("$BASE_URL/cases").let { httpConnect ->
+                if (httpConnect.responseCode == HttpURLConnection.HTTP_OK) {
+                    jacksonObjectMapper().readValue(
+                        httpConnect.inputStream,
+                        CovidCaseWrapper::class.java
+                    ).data?.forEach { emitter.next(it) }
+                    emitter.complete()
+                } else {
+                    throw RuntimeException("${httpConnect.responseCode}:${httpConnect.responseMessage}")
+                }
+            }
+        }.doOnNext { log.info("${it.no}") }.subscribeOn(Schedulers.single())
+
+        log.info("total data in flux ${flux.count().block()}")
     }
 
     //TODO revise this function to Consumer
